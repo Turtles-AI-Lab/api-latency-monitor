@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Free real-time API latency monitor. Compare response times across OpenAI, Anthropic, Google, Azure, and other LLM providers. Live performance monitoring.">
+    <meta name="keywords" content="API latency, API monitor, LLM performance, API speed, OpenAI speed, Claude speed, response time, API uptime">
+    <title>API Latency Monitor | Real-time LLM API Speed Comparison</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <h1>⚡ API Latency Monitor</h1>
+        <p class="subtitle">Real-time response time comparison for LLM APIs</p>
+        <div class="header-stats">
+            <span class="stat">🎯 <strong id="totalTests">0</strong> Tests Run</span>
+            <span class="stat">⚡ Avg: <strong id="avgLatency">--</strong>ms</span>
+            <span class="stat">🔥 Fastest: <strong id="fastestProvider">--</strong></span>
+        </div>
+        <div class="header-links">
+            <a href="https://github.com/Turtles-AI-Lab/api-latency-monitor" class="github-link" target="_blank">⭐ Star on GitHub</a>
+        </div>
+    </header>
+
+    <main>
+        <!-- Control Panel -->
+        <section class="control-panel">
+            <h2>🎮 Test Configuration</h2>
+            <div class="controls-grid">
+                <div class="control-group">
+                    <label>Test Mode:</label>
+                    <select id="testMode">
+                        <option value="ping">Ping Test (Fast)</option>
+                        <option value="simple">Simple Request</option>
+                        <option value="full">Full Request (Requires API Key)</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Test Interval:</label>
+                    <select id="testInterval">
+                        <option value="5000">5 seconds</option>
+                        <option value="10000" selected>10 seconds</option>
+                        <option value="30000">30 seconds</option>
+                        <option value="60000">1 minute</option>
+                        <option value="manual">Manual only</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <button id="startBtn" class="primary-btn">▶️ Start Monitoring</button>
+                    <button id="stopBtn" class="secondary-btn" disabled>⏸️ Stop</button>
+                    <button id="clearBtn" class="secondary-btn">🗑️ Clear Data</button>
+                </div>
+            </div>
+            <div class="status-bar">
+                <span id="statusText" class="status-text">Ready to start monitoring</span>
+                <span id="lastUpdate" class="last-update"></span>
+            </div>
+        </section>
+
+        <!-- API Providers Grid -->
+        <section class="providers-section">
+            <h2>📊 API Providers</h2>
+            <div id="providersGrid" class="providers-grid"></div>
+        </section>
+
+        <!-- Charts Section -->
+        <section class="charts-section">
+            <h2>📈 Performance History</h2>
+            <div class="chart-container">
+                <canvas id="latencyChart"></canvas>
+            </div>
+            <div class="chart-controls">
+                <button class="chart-btn" data-range="10">Last 10</button>
+                <button class="chart-btn active" data-range="20">Last 20</button>
+                <button class="chart-btn" data-range="50">Last 50</button>
+                <button class="chart-btn" data-range="all">All</button>
+            </div>
+        </section>
+
+        <!-- Statistics Table -->
+        <section class="stats-section">
+            <h2>📋 Detailed Statistics</h2>
+            <div class="table-container">
+                <table id="statsTable">
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Current</th>
+                            <th>Average</th>
+                            <th>Min</th>
+                            <th>Max</th>
+                            <th>Success Rate</th>
+                            <th>Tests</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="info-section">
+            <h2>💡 How It Works</h2>
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>🎯 Ping Test</h3>
+                    <p>Measures network latency to API endpoints. No API key required. Best for uptime monitoring.</p>
+                </div>
+                <div class="info-card">
+                    <h3>📝 Simple Request</h3>
+                    <p>Sends a minimal API request to measure response time. Simulates real-world usage.</p>
+                </div>
+                <div class="info-card">
+                    <h3>🔐 Full Request</h3>
+                    <p>Complete API request with authentication. Most accurate but requires your API keys.</p>
+                </div>
+                <div class="info-card">
+                    <h3>📊 Real-time Charts</h3>
+                    <p>Visual history of response times. Compare providers at a glance.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Privacy Notice -->
+        <section class="privacy-section">
+            <h2>🔒 Privacy & Security</h2>
+            <ul class="privacy-list">
+                <li>✅ All tests run in your browser - no data sent to our servers</li>
+                <li>✅ API keys (if provided) are stored locally and never transmitted</li>
+                <li>✅ Open source - inspect the code yourself</li>
+                <li>✅ No tracking, no analytics, no cookies</li>
+                <li>✅ Your data stays with you</li>
+            </ul>
+        </section>
+
+        <!-- Related Tools -->
+        <section class="related-tools">
+            <h2>🛠️ Related Tools</h2>
+            <div class="tools-grid">
+                <a href="https://github.com/Turtles-AI-Lab/llm-cost-calculator" class="tool-card" target="_blank">
+                    <h3>💰 LLM Cost Calculator</h3>
+                    <p>Compare AI API costs across providers</p>
+                </a>
+                <a href="https://github.com/Turtles-AI-Lab/prompt-template-library" class="tool-card" target="_blank">
+                    <h3>🎯 Prompt Template Library</h3>
+                    <p>Battle-tested AI prompts for all use cases</p>
+                </a>
+                <a href="https://github.com/Turtles-AI-Lab/email-to-ticket-parser" class="tool-card" target="_blank">
+                    <h3>📧 Email-to-Ticket Parser</h3>
+                    <p>Extract ticket info from support emails</p>
+                </a>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Built by <a href="https://github.com/Turtles-AI-Lab" target="_blank">Turtles AI Lab</a></p>
+        <p>Free & Open Source | <a href="mailto:jgreenia@jandraisolutions.com">Contact</a></p>
+        <p class="badge-container">
+            <img src="https://komarev.com/ghpvc/?username=api-latency-monitor&color=blue&style=flat-square&label=Visitors" alt="Visitor count">
+        </p>
+    </footer>
+
+    <script src="js/providers.js"></script>
+    <script src="js/monitor.js"></script>
+    <script src="js/chart.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
