@@ -4,21 +4,33 @@
 
 class LatencyMonitor {
     constructor() {
-        this.providers = API_PROVIDERS.map(provider => ({
-            ...provider,
-            stats: {
-                current: null,
-                min: Infinity,
-                max: 0,
-                avg: 0,
-                total: 0,
-                count: 0,
-                successes: 0,
-                failures: 0,
-                history: []
-            },
-            status: 'idle' // idle, testing, online, offline
-        }));
+        if (typeof API_PROVIDERS === 'undefined' || !Array.isArray(API_PROVIDERS)) {
+            console.error('API_PROVIDERS not found or invalid');
+            this.providers = [];
+        } else {
+            this.providers = API_PROVIDERS.map(provider => {
+                if (!provider) {
+                    console.warn('Skipping null/undefined provider');
+                    return null;
+                }
+
+                return {
+                    ...provider,
+                    stats: {
+                        current: null,
+                        min: Infinity,
+                        max: 0,
+                        avg: 0,
+                        total: 0,
+                        count: 0,
+                        successes: 0,
+                        failures: 0,
+                        history: []
+                    },
+                    status: 'idle' // idle, testing, online, offline
+                };
+            }).filter(Boolean);
+        }
 
         this.isMonitoring = false;
         this.monitoringInterval = null;
@@ -36,13 +48,22 @@ class LatencyMonitor {
         this.testMode = testMode;
 
         // Run immediate test
-        this.runTests();
+        this.runTests().catch(error => {
+            console.error('Error running initial tests:', error);
+        });
 
         // Set up interval if not manual
         if (intervalMs !== 'manual') {
+            const interval = parseInt(intervalMs, 10);
+            if (isNaN(interval) || interval <= 0) {
+                console.error('Invalid interval value:', intervalMs);
+                return;
+            }
             this.monitoringInterval = setInterval(() => {
-                this.runTests();
-            }, parseInt(intervalMs));
+                this.runTests().catch(error => {
+                    console.error('Error running tests:', error);
+                });
+            }, interval);
         }
     }
 
@@ -61,21 +82,43 @@ class LatencyMonitor {
      * Run tests on all providers
      */
     async runTests() {
+        if (!this.providers || !Array.isArray(this.providers)) {
+            console.error('Providers not initialized');
+            return;
+        }
+
         const promises = this.providers.map(provider =>
-            this.testProvider(provider)
+            this.testProvider(provider).catch(error => {
+                console.error(`Error testing provider ${provider?.name || 'unknown'}:`, error);
+                return { status: 'rejected', reason: error };
+            })
         );
-        await Promise.allSettled(promises);
-        this.totalTests++;
+
+        try {
+            await Promise.allSettled(promises);
+            this.totalTests++;
+        } catch (error) {
+            console.error('Error in runTests:', error);
+        }
     }
 
     /**
      * Test a single provider
      */
     async testProvider(provider) {
+        if (!provider) {
+            console.error('testProvider: provider is null or undefined');
+            return;
+        }
+
         provider.status = 'testing';
         this.notifyUpdate('testing', provider);
 
         try {
+            if (typeof performance === 'undefined' || !performance.now) {
+                throw new Error('Performance API not available');
+            }
+
             const startTime = performance.now();
 
             // Use appropriate test method
@@ -91,6 +134,10 @@ class LatencyMonitor {
             const endTime = performance.now();
             const latency = Math.round(endTime - startTime);
 
+            if (typeof latency !== 'number' || isNaN(latency) || latency < 0) {
+                throw new Error('Invalid latency measurement');
+            }
+
             if (success) {
                 this.updateStats(provider, latency, true);
                 provider.status = 'online';
@@ -100,6 +147,7 @@ class LatencyMonitor {
             }
 
         } catch (error) {
+            console.error(`Error testing provider ${provider.name || 'unknown'}:`, error);
             this.updateStats(provider, null, false);
             provider.status = 'offline';
         }
@@ -111,24 +159,45 @@ class LatencyMonitor {
      * Ping test - just check if endpoint is reachable
      */
     async pingTest(provider) {
+        if (!provider || !provider.endpoint || !provider.pingPath) {
+            console.error('Invalid provider configuration');
+            return false;
+        }
+
         try {
+            if (typeof AbortController === 'undefined') {
+                console.warn('AbortController not supported');
+                // Fallback without timeout
+                await fetch(provider.endpoint + provider.pingPath, {
+                    method: 'GET',
+                    mode: 'no-cors'
+                });
+                return true;
+            }
+
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 10000);
 
-            const response = await fetch(provider.endpoint + provider.pingPath, {
-                method: 'GET',
-                mode: 'no-cors', // Allow cross-origin requests
-                signal: controller.signal
-            });
+            try {
+                const response = await fetch(provider.endpoint + provider.pingPath, {
+                    method: 'GET',
+                    mode: 'no-cors', // Allow cross-origin requests
+                    signal: controller.signal
+                });
 
-            clearTimeout(timeout);
-            return true; // If we get here, endpoint is reachable
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                return false; // Timeout
+                clearTimeout(timeout);
+                return true; // If we get here, endpoint is reachable
+            } catch (error) {
+                clearTimeout(timeout);
+                if (error.name === 'AbortError') {
+                    return false; // Timeout
+                }
+                // For no-cors mode, even errors mean the endpoint exists
+                return true;
             }
-            // For no-cors mode, even errors mean the endpoint exists
-            return true;
+        } catch (error) {
+            console.error(`Ping test error for ${provider.name}:`, error);
+            return false;
         }
     }
 
@@ -153,27 +222,42 @@ class LatencyMonitor {
      * Update provider statistics
      */
     updateStats(provider, latency, success) {
+        if (!provider || !provider.stats) {
+            console.error('Invalid provider or stats object');
+            return;
+        }
+
         const stats = provider.stats;
 
-        stats.count++;
-        if (success) {
-            stats.successes++;
+        stats.count = (stats.count || 0) + 1;
+
+        if (success && typeof latency === 'number' && !isNaN(latency)) {
+            stats.successes = (stats.successes || 0) + 1;
             stats.current = latency;
-            stats.total += latency;
-            stats.avg = Math.round(stats.total / stats.successes);
-            stats.min = Math.min(stats.min, latency);
-            stats.max = Math.max(stats.max, latency);
+            stats.total = (stats.total || 0) + latency;
+
+            if (stats.successes > 0) {
+                stats.avg = Math.round(stats.total / stats.successes);
+            }
+
+            stats.min = Math.min(stats.min || Infinity, latency);
+            stats.max = Math.max(stats.max || 0, latency);
 
             // Add to history (keep last 100)
+            if (!Array.isArray(stats.history)) {
+                stats.history = [];
+            }
+
             stats.history.push({
                 timestamp: Date.now(),
                 latency: latency
             });
+
             if (stats.history.length > 100) {
                 stats.history.shift();
             }
         } else {
-            stats.failures++;
+            stats.failures = (stats.failures || 0) + 1;
             stats.current = null;
         }
     }
@@ -182,23 +266,38 @@ class LatencyMonitor {
      * Get all provider statistics
      */
     getStats() {
-        return this.providers.map(provider => ({
-            id: provider.id,
-            name: provider.name,
-            color: provider.color,
-            status: provider.status,
-            stats: { ...provider.stats }
-        }));
+        if (!Array.isArray(this.providers)) {
+            console.error('Providers not initialized');
+            return [];
+        }
+
+        return this.providers.map(provider => {
+            if (!provider) return null;
+
+            return {
+                id: provider.id || 'unknown',
+                name: provider.name || 'Unknown',
+                color: provider.color || '#000000',
+                status: provider.status || 'idle',
+                stats: provider.stats ? { ...provider.stats } : {}
+            };
+        }).filter(Boolean);
     }
 
     /**
      * Get fastest provider
      */
     getFastestProvider() {
-        const online = this.providers.filter(p => p.stats.current !== null);
+        if (!Array.isArray(this.providers)) return null;
+
+        const online = this.providers.filter(p =>
+            p && p.stats && typeof p.stats.current === 'number' && p.stats.current !== null
+        );
+
         if (online.length === 0) return null;
 
         return online.reduce((fastest, current) => {
+            if (!fastest || !fastest.stats || !current || !current.stats) return fastest;
             return current.stats.current < fastest.stats.current ? current : fastest;
         });
     }
@@ -207,18 +306,32 @@ class LatencyMonitor {
      * Get average latency across all providers
      */
     getAverageLatency() {
-        const online = this.providers.filter(p => p.stats.current !== null);
+        if (!Array.isArray(this.providers)) return null;
+
+        const online = this.providers.filter(p =>
+            p && p.stats && typeof p.stats.current === 'number' && p.stats.current !== null
+        );
+
         if (online.length === 0) return null;
 
         const total = online.reduce((sum, p) => sum + p.stats.current, 0);
-        return Math.round(total / online.length);
+        const avg = total / online.length;
+
+        return isNaN(avg) ? null : Math.round(avg);
     }
 
     /**
      * Clear all statistics
      */
     clearStats() {
+        if (!Array.isArray(this.providers)) {
+            console.error('Providers not initialized');
+            return;
+        }
+
         this.providers.forEach(provider => {
+            if (!provider) return;
+
             provider.stats = {
                 current: null,
                 min: Infinity,
@@ -239,8 +352,12 @@ class LatencyMonitor {
      * Notify update callback
      */
     notifyUpdate(event, provider) {
-        if (this.onUpdate) {
-            this.onUpdate(event, provider);
+        if (typeof this.onUpdate === 'function') {
+            try {
+                this.onUpdate(event, provider);
+            } catch (error) {
+                console.error('Error in update callback:', error);
+            }
         }
     }
 
@@ -248,7 +365,11 @@ class LatencyMonitor {
      * Set update callback
      */
     setUpdateCallback(callback) {
-        this.onUpdate = callback;
+        if (typeof callback === 'function') {
+            this.onUpdate = callback;
+        } else {
+            console.error('setUpdateCallback expects a function');
+        }
     }
 }
 

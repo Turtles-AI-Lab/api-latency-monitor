@@ -4,14 +4,48 @@
 
 class App {
     constructor() {
-        this.monitor = new LatencyMonitor();
-        this.chart = new LatencyChart('latencyChart');
-        this.lastUpdateTime = null;
+        try {
+            this.monitor = new LatencyMonitor();
+            this.chart = new LatencyChart('latencyChart');
+            this.lastUpdateTime = null;
+            this.eventListeners = [];
 
-        this.initializeElements();
-        this.attachEventListeners();
-        this.monitor.setUpdateCallback((event, provider) => this.handleMonitorUpdate(event, provider));
-        this.updateDisplay();
+            this.initializeElements();
+            this.attachEventListeners();
+            this.monitor.setUpdateCallback((event, provider) => this.handleMonitorUpdate(event, provider));
+            this.updateDisplay();
+        } catch (error) {
+            console.error('Failed to initialize app:', error);
+            this.showError('Failed to initialize application. Please refresh the page.');
+        }
+    }
+
+    destroy() {
+        // Clean up event listeners to prevent memory leaks
+        this.eventListeners.forEach(({ element, event, handler }) => {
+            if (element && handler) {
+                element.removeEventListener(event, handler);
+            }
+        });
+        this.eventListeners = [];
+
+        // Clean up chart
+        if (this.chart && this.chart.destroy) {
+            this.chart.destroy();
+        }
+
+        // Stop monitoring
+        if (this.monitor && this.monitor.stop) {
+            this.monitor.stop();
+        }
+    }
+
+    showError(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #ef4444; color: white; padding: 16px 24px; border-radius: 8px; z-index: 1000; font-family: sans-serif;';
+        errorDiv.textContent = message;
+        document.body.appendChild(errorDiv);
+        setTimeout(() => errorDiv.remove(), 5000);
     }
 
     initializeElements() {
@@ -32,28 +66,74 @@ class App {
         // Container elements
         this.providersGrid = document.getElementById('providersGrid');
         this.statsTableBody = document.getElementById('statsTableBody');
+
+        // Validate critical elements
+        const requiredElements = {
+            startBtn: this.startBtn,
+            stopBtn: this.stopBtn,
+            clearBtn: this.clearBtn,
+            testMode: this.testMode,
+            testInterval: this.testInterval,
+            statusText: this.statusText,
+            providersGrid: this.providersGrid,
+            statsTableBody: this.statsTableBody
+        };
+
+        const missing = Object.entries(requiredElements)
+            .filter(([name, element]) => !element)
+            .map(([name]) => name);
+
+        if (missing.length > 0) {
+            throw new Error(`Missing required DOM elements: ${missing.join(', ')}`);
+        }
     }
 
     attachEventListeners() {
-        this.startBtn.addEventListener('click', () => this.startMonitoring());
-        this.stopBtn.addEventListener('click', () => this.stopMonitoring());
-        this.clearBtn.addEventListener('click', () => this.clearData());
+        const startHandler = () => this.startMonitoring();
+        const stopHandler = () => this.stopMonitoring();
+        const clearHandler = () => this.clearData();
+
+        this.startBtn.addEventListener('click', startHandler);
+        this.stopBtn.addEventListener('click', stopHandler);
+        this.clearBtn.addEventListener('click', clearHandler);
+
+        // Track event listeners for cleanup
+        this.eventListeners.push(
+            { element: this.startBtn, event: 'click', handler: startHandler },
+            { element: this.stopBtn, event: 'click', handler: stopHandler },
+            { element: this.clearBtn, event: 'click', handler: clearHandler }
+        );
 
         // Chart range buttons
         document.querySelectorAll('.chart-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            const handler = (e) => {
+                if (!e.target) return;
                 document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
                 const range = e.target.getAttribute('data-range');
-                this.chart.setDataRange(range);
-                this.updateChart();
-            });
+                if (range && this.chart) {
+                    this.chart.setDataRange(range);
+                    this.updateChart();
+                }
+            };
+            btn.addEventListener('click', handler);
+            this.eventListeners.push({ element: btn, event: 'click', handler });
         });
     }
 
     startMonitoring() {
+        if (!this.testInterval || !this.testMode || !this.monitor) {
+            console.error('Cannot start monitoring: missing required elements');
+            return;
+        }
+
         const interval = this.testInterval.value;
         const mode = this.testMode.value;
+
+        if (!interval || !mode) {
+            console.error('Invalid interval or mode');
+            return;
+        }
 
         this.monitor.start(interval, mode);
 
@@ -62,11 +142,17 @@ class App {
         this.testMode.disabled = true;
         this.testInterval.disabled = true;
 
-        this.statusText.textContent = `Monitoring (${mode} mode, ${interval === 'manual' ? 'manual' : interval/1000 + 's interval'})`;
+        const intervalText = interval === 'manual' ? 'manual' : `${parseInt(interval, 10) / 1000}s interval`;
+        this.statusText.textContent = `Monitoring (${mode} mode, ${intervalText})`;
         this.statusText.classList.add('monitoring');
     }
 
     stopMonitoring() {
+        if (!this.monitor) {
+            console.error('Monitor not initialized');
+            return;
+        }
+
         this.monitor.stop();
 
         this.startBtn.disabled = false;
@@ -96,51 +182,86 @@ class App {
     }
 
     updateDisplay() {
+        if (!this.monitor) {
+            console.error('Monitor not initialized');
+            return;
+        }
+
         const stats = this.monitor.getStats();
+        if (!stats) {
+            console.warn('No stats available');
+            return;
+        }
 
         // Update header stats
-        this.totalTests.textContent = this.monitor.totalTests;
+        if (this.totalTests) {
+            this.totalTests.textContent = this.monitor.totalTests || 0;
+        }
 
-        const avgLatency = this.monitor.getAverageLatency();
-        this.avgLatency.textContent = avgLatency !== null ? avgLatency : '--';
+        if (this.avgLatency) {
+            const avgLatency = this.monitor.getAverageLatency();
+            this.avgLatency.textContent = avgLatency !== null ? avgLatency : '--';
+        }
 
-        const fastest = this.monitor.getFastestProvider();
-        this.fastestProvider.textContent = fastest ? fastest.name : '--';
+        if (this.fastestProvider) {
+            const fastest = this.monitor.getFastestProvider();
+            this.fastestProvider.textContent = fastest && fastest.name ? fastest.name : '--';
+        }
 
         // Update last update time
-        if (this.lastUpdateTime) {
+        if (this.lastUpdate && this.lastUpdateTime) {
             this.lastUpdate.textContent = `Last update: ${this.lastUpdateTime.toLocaleTimeString()}`;
         }
 
         // Update providers grid
-        this.updateProvidersGrid(stats);
+        if (this.providersGrid) {
+            this.updateProvidersGrid(stats);
+        }
 
         // Update statistics table
-        this.updateStatsTable(stats);
+        if (this.statsTableBody) {
+            this.updateStatsTable(stats);
+        }
 
         // Update chart with provider data
-        this.chart.setProviders(this.monitor.providers);
+        if (this.chart && this.monitor.providers) {
+            this.chart.setProviders(this.monitor.providers);
+        }
     }
 
     updateProvidersGrid(stats) {
+        if (!this.providersGrid) return;
+
         this.providersGrid.innerHTML = '';
 
+        if (!Array.isArray(stats)) {
+            console.warn('updateProvidersGrid: stats is not an array');
+            return;
+        }
+
         stats.forEach(provider => {
-            const card = this.createProviderCard(provider);
-            this.providersGrid.appendChild(card);
+            if (provider) {
+                const card = this.createProviderCard(provider);
+                if (card) {
+                    this.providersGrid.appendChild(card);
+                }
+            }
         });
     }
 
     createProviderCard(provider) {
+        if (!provider) return null;
+
         const card = document.createElement('div');
         card.className = 'provider-card';
 
         // Add status class
-        if (provider.status === 'testing') {
+        const status = provider.status || 'idle';
+        if (status === 'testing') {
             card.classList.add('testing');
-        } else if (provider.status === 'online') {
+        } else if (status === 'online') {
             card.classList.add('success');
-        } else if (provider.status === 'offline') {
+        } else if (status === 'offline') {
             card.classList.add('error');
         }
 
@@ -150,11 +271,11 @@ class App {
 
         const name = document.createElement('div');
         name.className = 'provider-name';
-        name.textContent = provider.name;
-        name.style.color = provider.color;
+        name.textContent = provider.name || 'Unknown';
+        name.style.color = provider.color || '#000000';
 
         const statusIndicator = document.createElement('div');
-        statusIndicator.className = `provider-status ${provider.status}`;
+        statusIndicator.className = `provider-status ${status}`;
 
         header.appendChild(name);
         header.appendChild(statusIndicator);
@@ -165,7 +286,8 @@ class App {
 
         const latencyValue = document.createElement('div');
         latencyValue.className = 'latency-value';
-        latencyValue.textContent = provider.stats.current !== null ? provider.stats.current : '--';
+        const currentLatency = provider.stats && provider.stats.current !== null ? provider.stats.current : '--';
+        latencyValue.textContent = currentLatency;
 
         const latencyLabel = document.createElement('div');
         latencyLabel.className = 'latency-label';
@@ -178,13 +300,14 @@ class App {
         const statsGrid = document.createElement('div');
         statsGrid.className = 'provider-stats';
 
+        const stats = provider.stats || {};
         const statItems = [
-            { label: 'Average', value: provider.stats.avg ? provider.stats.avg + 'ms' : '--' },
-            { label: 'Min', value: provider.stats.min !== Infinity ? provider.stats.min + 'ms' : '--' },
-            { label: 'Max', value: provider.stats.max > 0 ? provider.stats.max + 'ms' : '--' },
-            { label: 'Success', value: provider.stats.successes },
-            { label: 'Failed', value: provider.stats.failures },
-            { label: 'Total', value: provider.stats.count }
+            { label: 'Average', value: stats.avg ? stats.avg + 'ms' : '--' },
+            { label: 'Min', value: stats.min !== Infinity && stats.min !== undefined ? stats.min + 'ms' : '--' },
+            { label: 'Max', value: stats.max > 0 ? stats.max + 'ms' : '--' },
+            { label: 'Success', value: stats.successes || 0 },
+            { label: 'Failed', value: stats.failures || 0 },
+            { label: 'Total', value: stats.count || 0 }
         ];
 
         statItems.forEach(item => {
@@ -212,51 +335,62 @@ class App {
     }
 
     updateStatsTable(stats) {
+        if (!this.statsTableBody) return;
+
         this.statsTableBody.innerHTML = '';
 
+        if (!Array.isArray(stats)) {
+            console.warn('updateStatsTable: stats is not an array');
+            return;
+        }
+
         stats.forEach(provider => {
+            if (!provider) return;
             const row = document.createElement('tr');
 
             // Provider name
             const nameCell = document.createElement('td');
-            nameCell.style.color = provider.color;
+            nameCell.style.color = provider.color || '#000000';
             nameCell.style.fontWeight = '600';
-            nameCell.textContent = provider.name;
+            nameCell.textContent = provider.name || 'Unknown';
 
             // Current latency
             const currentCell = document.createElement('td');
-            if (provider.stats.current !== null) {
-                currentCell.textContent = provider.stats.current + 'ms';
-                currentCell.appendChild(this.createLatencyBadge(provider.stats.current));
+            const stats = provider.stats || {};
+            if (stats.current !== null && stats.current !== undefined) {
+                currentCell.textContent = stats.current + 'ms';
+                const badge = this.createLatencyBadge(stats.current);
+                if (badge) currentCell.appendChild(badge);
             } else {
                 currentCell.textContent = '--';
             }
 
             // Average latency
             const avgCell = document.createElement('td');
-            avgCell.textContent = provider.stats.avg > 0 ? provider.stats.avg + 'ms' : '--';
+            avgCell.textContent = stats.avg > 0 ? stats.avg + 'ms' : '--';
 
             // Min latency
             const minCell = document.createElement('td');
-            minCell.textContent = provider.stats.min !== Infinity ? provider.stats.min + 'ms' : '--';
+            minCell.textContent = stats.min !== Infinity && stats.min !== undefined ? stats.min + 'ms' : '--';
 
             // Max latency
             const maxCell = document.createElement('td');
-            maxCell.textContent = provider.stats.max > 0 ? provider.stats.max + 'ms' : '--';
+            maxCell.textContent = stats.max > 0 ? stats.max + 'ms' : '--';
 
             // Success rate
             const successRateCell = document.createElement('td');
-            if (provider.stats.count > 0) {
-                const rate = ((provider.stats.successes / provider.stats.count) * 100).toFixed(1);
+            if (stats.count > 0) {
+                const rate = ((stats.successes / stats.count) * 100).toFixed(1);
                 successRateCell.textContent = rate + '%';
-                successRateCell.appendChild(this.createSuccessRateBadge(parseFloat(rate)));
+                const badge = this.createSuccessRateBadge(parseFloat(rate));
+                if (badge) successRateCell.appendChild(badge);
             } else {
                 successRateCell.textContent = '--';
             }
 
             // Total tests
             const testsCell = document.createElement('td');
-            testsCell.textContent = provider.stats.count;
+            testsCell.textContent = stats.count || 0;
 
             row.appendChild(nameCell);
             row.appendChild(currentCell);
@@ -271,6 +405,10 @@ class App {
     }
 
     createLatencyBadge(latency) {
+        if (typeof latency !== 'number' || isNaN(latency)) {
+            return null;
+        }
+
         const badge = document.createElement('span');
         badge.className = 'badge';
         badge.style.marginLeft = '8px';
@@ -290,6 +428,10 @@ class App {
     }
 
     createSuccessRateBadge(rate) {
+        if (typeof rate !== 'number' || isNaN(rate)) {
+            return null;
+        }
+
         const badge = document.createElement('span');
         badge.className = 'badge';
         badge.style.marginLeft = '8px';
@@ -309,7 +451,15 @@ class App {
     }
 
     updateChart() {
-        this.chart.draw();
+        if (!this.chart) {
+            console.warn('Chart not initialized');
+            return;
+        }
+        try {
+            this.chart.draw();
+        } catch (error) {
+            console.error('Error drawing chart:', error);
+        }
     }
 }
 
