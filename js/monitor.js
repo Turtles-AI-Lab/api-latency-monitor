@@ -42,7 +42,8 @@ class LatencyMonitor {
      * Start monitoring
      */
     start(intervalMs, testMode = 'ping') {
-        if (this.isMonitoring) return;
+        // Always stop first to clean up any existing intervals
+        this.stop();
 
         this.isMonitoring = true;
         this.testMode = testMode;
@@ -185,15 +186,16 @@ class LatencyMonitor {
                     signal: controller.signal
                 });
 
-                clearTimeout(timeout);
                 return true; // If we get here, endpoint is reachable
             } catch (error) {
-                clearTimeout(timeout);
                 if (error.name === 'AbortError') {
                     return false; // Timeout
                 }
                 // For no-cors mode, even errors mean the endpoint exists
                 return true;
+            } finally {
+                // Always clear timeout to prevent memory leak
+                clearTimeout(timeout);
             }
         } catch (error) {
             console.error(`Ping test error for ${provider.name}:`, error);

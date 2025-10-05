@@ -467,3 +467,10 @@ class App {
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
 });
+
+// Clean up resources when page is unloaded
+window.addEventListener('beforeunload', () => {
+    if (window.app && window.app.destroy) {
+        window.app.destroy();
+    }
+});
