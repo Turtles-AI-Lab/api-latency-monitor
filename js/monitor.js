@@ -182,17 +182,19 @@ class LatencyMonitor {
             try {
                 const response = await fetch(provider.endpoint + provider.pingPath, {
                     method: 'GET',
-                    mode: 'no-cors', // Allow cross-origin requests
+                    mode: 'no-cors', // Required for cross-origin API endpoints
                     signal: controller.signal
                 });
 
-                return true; // If we get here, endpoint is reachable
+                // Note: no-cors mode returns opaque response, cannot verify success
+                // We can only confirm the request didn't timeout
+                return true;
             } catch (error) {
                 if (error.name === 'AbortError') {
-                    return false; // Timeout
+                    return false; // Timeout - endpoint unreachable or too slow
                 }
-                // For no-cors mode, even errors mean the endpoint exists
-                return true;
+                // Network errors indicate endpoint might be down
+                return false; // Changed from true - be conservative
             } finally {
                 // Always clear timeout to prevent memory leak
                 clearTimeout(timeout);
