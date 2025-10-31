@@ -1,5 +1,13 @@
 # ⚡ API Latency Monitor
 
+
+![GitHub stars](https://img.shields.io/github/stars/Turtles-AI-Lab/api-latency-monitor?style=social)
+![GitHub forks](https://img.shields.io/github/forks/Turtles-AI-Lab/api-latency-monitor?style=social)
+![GitHub issues](https://img.shields.io/github/issues/Turtles-AI-Lab/api-latency-monitor)
+![GitHub license](https://img.shields.io/github/license/Turtles-AI-Lab/api-latency-monitor)
+![GitHub last commit](https://img.shields.io/github/last-commit/Turtles-AI-Lab/api-latency-monitor)
+
+
 Real-time response time comparison for LLM API providers. Monitor OpenAI, Anthropic, Google AI, Azure, Cohere, and Hugging Face APIs with beautiful visualizations and detailed statistics.
 
 ## 🎯 Features
